@@ -1,0 +1,10 @@
+name: cloud-focx-infrastructure
+description: ECS and Fargate infrastructure
+runtime:
+  name: nodejs
+  options:
+    packagemanager: pnpm
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-typescript
