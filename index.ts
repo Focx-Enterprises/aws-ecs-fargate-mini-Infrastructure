@@ -61,8 +61,48 @@ const loadBalancer = new aws.lb.LoadBalancer(`cloudfocx-nginx-lb`, {
     },
 }, { dependsOn: ecs });
 
-// Create a listener for HTTP
-/* const httpListener = new aws.lb.Listener(`cloudfocx-httpListener`, {
+
+// Create a target group
+const targetGroup = new aws.lb.TargetGroup("cloudfocx-target-group", {
+    port: 80,
+    protocol: "HTTP",
+    vpcId: infra.vpc.id, // Your VPC ID
+    healthCheck: {
+        path: "/",
+        interval: 30,
+        timeout: 5,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+    },
+    tags: {
+        Name: "cloudfocx-target-group",
+    },
+});
+
+
+const cert = aws.acm.getCertificate({
+    domain: "*.cloud.dev.focx.org",
+    statuses: ["ISSUED"],
+});
+const zone = aws.route53.getZone({ name: "focx.org" }); 
+
+// Create the HTTPS listener using the ACM certificate ARN
+new aws.lb.Listener("cloudfocx-httpsListener", {
+    loadBalancerArn: loadBalancer.arn,
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-2016-08", // You can adjust this SSL policy as needed
+    certificateArn: cert.then(c => c.arn), // The ACM certificate ARN for the domain
+    defaultActions: [
+        {
+            type: "forward",
+            targetGroupArn: targetGroup.arn
+        },
+    ],
+}, { dependsOn: loadBalancer });
+
+// HTTP Listener (redirect HTTP to HTTPS)
+new aws.lb.Listener("cloudfocx-httpListener", {
     loadBalancerArn: loadBalancer.arn,
     port: 80,
     protocol: "HTTP",
@@ -70,53 +110,36 @@ const loadBalancer = new aws.lb.LoadBalancer(`cloudfocx-nginx-lb`, {
         {
             type: "redirect",
             redirect: {
-                port: "443",
                 protocol: "HTTPS",
+                port: "443",
                 statusCode: "HTTP_301",
             },
         },
     ],
-}, { dependsOn: loadBalancer }); */
+}, { dependsOn: loadBalancer });
 
-// Create a listener for HTTPS
-/* const httpsListener = new aws.lb.Listener("cloudfocx-httpsListener", {
-    loadBalancerArn: loadBalancer.arn,
-    port: 443,
-    protocol: "HTTPS",
-    sslPolicy: "ELBSecurityPolicy-2016-08",
-    certificateArn: "arn:aws:acm:us-east-1:237994797452:certificate/5f96e81c-84ec-4511-a3fa-f18aafd1d7a6", // Replace with your certificate ARN
-    defaultActions: [
-        {
-            type: "forward",
-        },
-    ],
-}, { dependsOn: loadBalancer }); */
-
-// const zoneId = "Z0132344WUPZAAVUSRT6"
-
-// Create a DNS A and AAAA record
-/* const ARecord = new aws.route53.Record("cloudfocx-influencer-api-record-a", {
-    zoneId,
-    name: "influencer-api.cloud.dev",
+// Create a DNS A record (Alias) in Route 53 to point to the ALB
+const ARecord = new aws.route53.Record("cloudfocx-influencer-api-record-a", {
+    zoneId: zone.then(z => z.id),
+    name: "influencer-api.cloud.dev.focx.org", // Your domain
     type: "A",
     aliases: [{
         name: loadBalancer.dnsName,
-        zoneId: loadBalancer.id,
+        zoneId: loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
         evaluateTargetHealth: false,
     }],
-}); */
+}, { dependsOn: [loadBalancer] });
 
-/* const AAAARecord = new aws.route53.Record("influencer-api-record-aaaa", {
-    zoneId,
-    name: "influencer-api.cloud",
+const AAAARecord = new aws.route53.Record("cloudfocx-influencer-api-record-aaaa", {
+    zoneId: zone.then(z => z.id),
+    name: "influencer-api.cloud.dev.focx.org", // Your domain
     type: "AAAA",
     aliases: [{
         name: loadBalancer.dnsName,
-        zoneId: loadBalancer.id,
+        zoneId: loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
         evaluateTargetHealth: false,
     }],
-}); */
-
+}, { dependsOn: [loadBalancer] });
 
 // Export the ECS cluster and service name
 export const ecsClusterArn = cluster.arn;
@@ -128,3 +151,5 @@ export const securityGroupId = infra.securityGroup.id;
 export const loadBalancerUrl = loadBalancer.dnsName;
 
 // Export the name servers of the hosted zone
+export const zoneId = zone.then(z => z.id)
+export const certARN = cert.then(c => c.arn)
