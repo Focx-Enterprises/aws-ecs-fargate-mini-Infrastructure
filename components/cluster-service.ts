@@ -4,21 +4,19 @@ import * as aws from "@pulumi/aws";
 // Define the arguments for the ECS component
 interface EcsArgs {
     publicSubnetIds: Input<string>[];
+    privateSubnetIds: Input<string>[];
     securityGroupId: Input<string>;
     executionRoleArn: Input<string>;
+    clusterArn: Input<string>
 }
 
 // Define an ECS component
-export class ECS extends ComponentResource {
-    public readonly cluster: aws.ecs.Cluster;
+export class ClusterService extends ComponentResource {
     public readonly service: aws.ecs.Service;
     public readonly taskDefinition: aws.ecs.TaskDefinition;
 
     constructor(name: string, args: EcsArgs, opts?: ComponentResourceOptions) {
         super("custom:resource:EcsComponent", name, {}, opts);
-
-        // Create an ECS cluster
-        this.cluster = new aws.ecs.Cluster(name, {}, { parent: this });
 
         // Create a task definition
         this.taskDefinition = new aws.ecs.TaskDefinition(`${name}-task`, {
@@ -42,19 +40,18 @@ export class ECS extends ComponentResource {
 
         // Create an ECS service
         this.service = new aws.ecs.Service(`${name}-service`, {
-            cluster: this.cluster.arn,
+            cluster: args.clusterArn,
             taskDefinition: this.taskDefinition.arn,
             desiredCount: 1,
             launchType: "FARGATE",
             networkConfiguration: {
                 subnets: args.publicSubnetIds,
                 securityGroups: [args.securityGroupId],
-                assignPublicIp: false,
+                assignPublicIp: true,
             }
-        }, { parent: this });
+        }, { parent: this.taskDefinition });
 
         this.registerOutputs({
-            cluster: this.cluster,
             service: this.service,
             taskDefinition: this.taskDefinition,
         });
