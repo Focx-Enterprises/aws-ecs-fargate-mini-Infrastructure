@@ -1,4 +1,4 @@
-name: cloud-focx-infrastructure
+name: cloudfocx-infrastructure
 description: ECS and Fargate infrastructure
 runtime:
   name: nodejs

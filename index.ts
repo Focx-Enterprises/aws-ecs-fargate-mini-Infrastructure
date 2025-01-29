@@ -1,7 +1,13 @@
 import { VPC } from "./components/vpc";
 import { ClusterService } from "./components/cluster-service";
+import { DnsRecords } from "./components/dns-records";
 
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+
+// Load the Pulumi configuration
+const config = new pulumi.Config();
+const domains = config.requireObject<string[]>("domains");
 
 
 // Create an IAM role for ECS task execution
@@ -22,7 +28,7 @@ const taskExecutionRole = new aws.iam.Role("cloudfocx-task-execution-role", {
 });
 
 // Attach the AmazonECSTaskExecutionRolePolicy to the IAM Role
-new aws.iam.RolePolicyAttachment("cloud-focx-task-execution-role-policy-attachment", {
+new aws.iam.RolePolicyAttachment("cloudfocx-task-execution-role-policy-attachment", {
     role: taskExecutionRole.name,
     policyArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
 });
@@ -34,8 +40,27 @@ const infra = new VPC("cloudfocx-vpc", {
     privateSubnetCidrs: ["10.0.3.0/24", "10.0.4.0/24"],
 });
 
+// Create a target group
+const targetGroup = new aws.lb.TargetGroup("cloudfocx-target-group", {
+    port: 80,
+    protocol: "HTTP",
+    targetType: "ip",
+    vpcId: infra.vpc.id, // Your VPC ID
+    healthCheck: {
+        path: "/",
+        interval: 30,
+        timeout: 5,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+    },
+    tags: {
+        Name: "cloudfocx-target-group",
+    },
+});
+
 // Create an ECS cluster
 const cluster = new aws.ecs.Cluster("cloudfocx-dev-cluster", { name: "cloudfocx-dev-cluster" });
+
 
 // Create task defination and service
 const ecs = new ClusterService("cloudfocx-ecs-dev", {
@@ -44,7 +69,8 @@ const ecs = new ClusterService("cloudfocx-ecs-dev", {
     privateSubnetIds: infra.privateSubnets.map(subnet => subnet.id),
     securityGroupId: infra.securityGroup.id,
     executionRoleArn: taskExecutionRole.arn, // Replace with your actual IAM role ARN
-}, { dependsOn: infra });
+    targetGroupArn: targetGroup.arn
+}, { dependsOn: [infra, cluster, targetGroup] });
 
 
 // Create an Application Load Balancer
@@ -62,29 +88,12 @@ const loadBalancer = new aws.lb.LoadBalancer(`cloudfocx-nginx-lb`, {
 }, { dependsOn: ecs });
 
 
-// Create a target group
-const targetGroup = new aws.lb.TargetGroup("cloudfocx-target-group", {
-    port: 80,
-    protocol: "HTTP",
-    vpcId: infra.vpc.id, // Your VPC ID
-    healthCheck: {
-        path: "/",
-        interval: 30,
-        timeout: 5,
-        healthyThreshold: 2,
-        unhealthyThreshold: 2,
-    },
-    tags: {
-        Name: "cloudfocx-target-group",
-    },
-});
-
-
 const cert = aws.acm.getCertificate({
     domain: "*.cloud.dev.focx.org",
     statuses: ["ISSUED"],
 });
-const zone = aws.route53.getZone({ name: "focx.org" }); 
+
+const zone = aws.route53.getZone({ name: "focx.org" });
 
 // Create the HTTPS listener using the ACM certificate ARN
 new aws.lb.Listener("cloudfocx-httpsListener", {
@@ -118,28 +127,12 @@ new aws.lb.Listener("cloudfocx-httpListener", {
     ],
 }, { dependsOn: loadBalancer });
 
-// Create a DNS A record (Alias) in Route 53 to point to the ALB
-const ARecord = new aws.route53.Record("cloudfocx-influencer-api-record-a", {
+new DnsRecords("cloudfocx-dns-records", {
+    domains,
     zoneId: zone.then(z => z.id),
-    name: "influencer-api.cloud.dev.focx.org", // Your domain
-    type: "A",
-    aliases: [{
-        name: loadBalancer.dnsName,
-        zoneId: loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
-        evaluateTargetHealth: false,
-    }],
-}, { dependsOn: [loadBalancer] });
-
-const AAAARecord = new aws.route53.Record("cloudfocx-influencer-api-record-aaaa", {
-    zoneId: zone.then(z => z.id),
-    name: "influencer-api.cloud.dev.focx.org", // Your domain
-    type: "AAAA",
-    aliases: [{
-        name: loadBalancer.dnsName,
-        zoneId: loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
-        evaluateTargetHealth: false,
-    }],
-}, { dependsOn: [loadBalancer] });
+    loadBalancerDnsName: loadBalancer.dnsName,
+    loadBalancerZoneId: loadBalancer.zoneId
+});
 
 // Export the ECS cluster and service name
 export const ecsClusterArn = cluster.arn;

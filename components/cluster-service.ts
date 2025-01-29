@@ -7,7 +7,8 @@ interface EcsArgs {
     privateSubnetIds: Input<string>[];
     securityGroupId: Input<string>;
     executionRoleArn: Input<string>;
-    clusterArn: Input<string>
+    clusterArn: Input<string>,
+    targetGroupArn: Input<string>
 }
 
 // Define an ECS component
@@ -48,7 +49,8 @@ export class ClusterService extends ComponentResource {
                 subnets: args.publicSubnetIds,
                 securityGroups: [args.securityGroupId],
                 assignPublicIp: true,
-            }
+            },
+            loadBalancers: [{ targetGroupArn: args.targetGroupArn, containerName: "nginx", containerPort: 80 }],
         }, { parent: this.taskDefinition });
 
         this.registerOutputs({

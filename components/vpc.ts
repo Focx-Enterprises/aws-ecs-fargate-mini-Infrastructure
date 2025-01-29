@@ -39,27 +39,27 @@ export class VPC extends ComponentResource {
         this.publicSubnets = [];
         this.privateSubnets = [];
 
-        
 
-            for (let i = 0; i < args.publicSubnetCidrs.length; i++) {
-                this.publicSubnets.push(new aws.ec2.Subnet(`${name}-public-${i}`, {
-                    vpcId: this.vpc.id,
-                    cidrBlock: args.publicSubnetCidrs[i],
-                    availabilityZone: ['ap-south-1a','ap-south-1b','ap-south-1c'][i],
-                    mapPublicIpOnLaunch: true,
-                    tags: { Name: `${name}-public-${i}` },
-                }, { parent: this.vpc }));
-            }
 
-            for (let i = 0; i < args.privateSubnetCidrs.length; i++) {
-                this.privateSubnets.push(new aws.ec2.Subnet(`${name}-private-${i}`, {
-                    vpcId: this.vpc.id,
-                    cidrBlock: args.privateSubnetCidrs[i],
-                    availabilityZone: ['ap-south-1a','ap-south-1b','ap-south-1c'][i],
-                    tags: { Name: `${name}-private-${i}` },
-                }, { parent: this.vpc }));
-            }
-        
+        for (let i = 0; i < args.publicSubnetCidrs.length; i++) {
+            this.publicSubnets.push(new aws.ec2.Subnet(`${name}-public-${i}`, {
+                vpcId: this.vpc.id,
+                cidrBlock: args.publicSubnetCidrs[i],
+                availabilityZone: ['ap-south-1a', 'ap-south-1b', 'ap-south-1c'][i],
+                mapPublicIpOnLaunch: true,
+                tags: { Name: `${name}-public-${i}` },
+            }, { parent: this.vpc }));
+        }
+
+        for (let i = 0; i < args.privateSubnetCidrs.length; i++) {
+            this.privateSubnets.push(new aws.ec2.Subnet(`${name}-private-${i}`, {
+                vpcId: this.vpc.id,
+                cidrBlock: args.privateSubnetCidrs[i],
+                availabilityZone: ['ap-south-1a', 'ap-south-1b', 'ap-south-1c'][i],
+                tags: { Name: `${name}-private-${i}` },
+            }, { parent: this.vpc }));
+        }
+
 
         // Create a route table for public subnet and attach to the subnet
         const publicRouteTable = new aws.ec2.RouteTable(`${name}-public-route-table`, {
@@ -94,6 +94,12 @@ export class VPC extends ComponentResource {
                     toPort: 80,
                     cidrBlocks: ["0.0.0.0/0"],
                 },
+                {
+                    protocol: "tcp",
+                    fromPort: 443,
+                    toPort: 443,
+                    cidrBlocks: ["0.0.0.0/0"], // Allow from anywhere
+                }
             ],
             egress: [
                 {
