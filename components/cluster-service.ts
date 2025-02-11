@@ -11,6 +11,7 @@ interface EcsArgs {
     targetGroupArn: Input<string>
 }
 
+
 // Define an ECS component
 export class ClusterService extends ComponentResource {
     public readonly service: aws.ecs.Service;
