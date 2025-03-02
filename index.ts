@@ -9,19 +9,19 @@ import * as aws from "@pulumi/aws";
 
 // Load the Pulumi configuration
 const config = new pulumi.Config();
-const domains = config.requireObject<string[]>("domains");
+const domain = config.require("domain");
 
-const devProvider = new aws.Provider("cloudfocx-dev", { profile: "sysadmin" });
 
 // Create an instance of the VPC component
 const infra = new VPC("cloudfocx-vpc", {
   cidrBlock: "10.0.0.0/16",
   publicSubnetCidrs: ["10.0.1.0/24", "10.0.2.0/24"],
   privateSubnetCidrs: ["10.0.3.0/24", "10.0.4.0/24"],
-}, { provider: devProvider });
+});
 
 // Create a target group
-const targetGroup = new aws.lb.TargetGroup("cloudfocx-target-group", {
+const targetGroup = new aws.lb.TargetGroup("cloudfocx-dev-target-group", {
+  name:"cloudfocx-dev-target-group", 
   port: 80,
   protocol: "HTTP",
   targetType: "ip",
@@ -36,10 +36,10 @@ const targetGroup = new aws.lb.TargetGroup("cloudfocx-target-group", {
   tags: {
     Name: "cloudfocx-target-group",
   },
-}, { provider: devProvider });
+});
 
 // Create an ECS cluster
-const cluster = new aws.ecs.Cluster("cloudfocx-dev-cluster", { name: "cloudfocx-dev-cluster" }, { provider: devProvider });
+const cluster = new aws.ecs.Cluster("cloudfocx-dev-cluster", { name: "cloudfocx-dev-cluster" });
 
 const executionRole = new IamRoleWithPolicy("cloudfocx-dev-task-execution", {
   assumeRolePolicy: JSON.stringify({
@@ -55,45 +55,47 @@ const executionRole = new IamRoleWithPolicy("cloudfocx-dev-task-execution", {
     ],
   }),
   policyAttachmentArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}, { provider: devProvider });
+});
 
 // Create task defination and service
-const ecs = new ClusterService("cloudfocx-ecs-dev", {
+const ecs = new ClusterService("cloudfocx-dev-ecs", {
   clusterArn: cluster.arn,
   publicSubnetIds: infra.publicSubnets.map(subnet => subnet.id),
-  privateSubnetIds: infra.privateSubnets.map(subnet => subnet.id),
+  privateSubnetIds: false, //infra.privateSubnets.map(subnet => subnet.id),
   securityGroupId: infra.securityGroup.id,
   executionRoleArn: executionRole.role.arn, // Replace with your actual IAM role ARN
   loadBalancer: [{ containerPort: 80, containerName: "nginx", targetGroupArn: targetGroup.arn }]
-}, { dependsOn: [infra, cluster, targetGroup], provider: devProvider });
+}, { dependsOn: [infra, cluster, targetGroup] });
 
 
 const cert = aws.acm.getCertificate({
-  domain: "*.cloud.dev.focx.org",
+  domain: domain,
   statuses: ["ISSUED"],
 });
 
-const zone = aws.route53.getZone({ name: "focx.org" });
-
 const lb = new LoadBalancer("cloudfocx-dev-nginx", {
+  domain: domain,
   securityGroups: [infra.securityGroup.id],
   subnets: infra.publicSubnets.map(v => v.id),
   certificateArn: cert.then(c => c.arn), targetGroupArn: targetGroup.arn
-}, { dependsOn: [ecs, infra], provider: devProvider });
+}, { dependsOn: [ecs, infra]});
+
+const zone = aws.route53.getZone({ name: "weddingtwinkles.in" });
 
 new DnsRecords("cloudfocx-dns-records", {
-  domains,
+  domain: domain,
   zoneId: zone.then(z => z.id),
   aliases: [{
     name: lb.loadBalancer.dnsName,
     zoneId: lb.loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
     evaluateTargetHealth: false,
   }]
-}, { provider: devProvider });
+});
 
 // Export the ECS cluster and service name
 export const ecsClusterArn = cluster.arn;
-export const ecsServiceName = ecs.service.name;
+
+export const ecsServiceName = ecs.service?.name;
 
 // Export the VPC ID and Security Group ID and lb
 export const vpcId = infra.vpc.id;
