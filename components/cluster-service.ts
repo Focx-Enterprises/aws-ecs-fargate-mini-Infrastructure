@@ -8,9 +8,8 @@ interface EcsArgs {
     securityGroupId: Input<string>;
     executionRoleArn: Input<string>;
     clusterArn: Input<string>,
-    targetGroupArn: Input<string>
+    loadBalancer?: Input<{ targetGroupArn: Input<string>, containerName: string, containerPort: number }>[]
 }
-
 
 // Define an ECS component
 export class ClusterService extends ComponentResource {
@@ -42,6 +41,7 @@ export class ClusterService extends ComponentResource {
 
         // Create an ECS service
         this.service = new aws.ecs.Service(`${name}-service`, {
+            name: `${name}-service`,
             cluster: args.clusterArn,
             taskDefinition: this.taskDefinition.arn,
             desiredCount: 1,
@@ -51,7 +51,7 @@ export class ClusterService extends ComponentResource {
                 securityGroups: [args.securityGroupId],
                 assignPublicIp: true,
             },
-            loadBalancers: [{ targetGroupArn: args.targetGroupArn, containerName: "nginx", containerPort: 80 }],
+            loadBalancers: args.loadBalancer,
         }, { parent: this.taskDefinition });
 
         this.registerOutputs({

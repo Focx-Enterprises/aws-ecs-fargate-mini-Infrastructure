@@ -3,3 +3,4 @@ config:
   aws:region: ap-south-1
   cloudfocx-infrastructure:domains:
     - influencer-api
+  aws:profile: sysadmin
