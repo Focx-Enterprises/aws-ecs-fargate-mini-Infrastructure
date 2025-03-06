@@ -4,59 +4,50 @@ import * as aws from "@pulumi/aws";
 interface DnsRecordArgs {
   domain: string;
   zoneId: pulumi.Input<string>;
-  records?: pulumi.Input<string>[]
-  aliases?: pulumi.Input<{
-    name: pulumi.Input<string>;
-    zoneId: pulumi.Input<string>
-    evaluateTargetHealth: boolean,
-  }>[]
+  albDnsName: pulumi.Input<string>;
+  albZoneId: pulumi.Input<string>;
 }
 
 export class DnsRecords extends pulumi.ComponentResource {
   constructor(name: string, args: DnsRecordArgs, opts?: pulumi.ComponentResourceOptions) {
     super("custom:resource:DnsRecords", name, {}, opts);
 
-    const { domain, zoneId, records, aliases } = args;
+    const { domain, zoneId, albDnsName, albZoneId } = args;
 
-    if (records && aliases)
-      throw new Error("Custom Error: Alias records cannot be set for the root domain.");
-
-    // Create a DNS A record (Alias) in Route 53 to point to the ALB
+    // ✅ Route main domain (WordPress) to ALB
     new aws.route53.Record(`${name}-${domain}-record-a`, {
       zoneId: zoneId,
-      name: `${domain}`, // Your domain
+      name: domain,
       type: "A",
-      records,
-      aliases,
+      aliases: [{
+        name: albDnsName,
+        zoneId: albZoneId,
+        evaluateTargetHealth: true,
+      }],
     }, { parent: this });
 
-
-
- new aws.route53.Record(`${name}-${domain}-redirect-record-a`, {
+    // ✅ Route 'www.domain.com' to ALB
+    new aws.route53.Record(`${name}-www-${domain}-record-a`, {
       zoneId: zoneId,
-      name: `www.${domain}`, // Your domain
+      name: `www.${domain}`,
       type: "A",
-      records,
-      aliases,
+      aliases: [{
+        name: albDnsName,
+        zoneId: albZoneId,
+        evaluateTargetHealth: true,
+      }],
     }, { parent: this });
 
-    // Create a DNS AAAA record (Alias) in Route 53 to point to the ALB
-    new aws.route53.Record(`${name}-${domain}-record-aaaa`, {
+    // ✅ Route 'adminer.domain.com' to ALB
+    new aws.route53.Record(`${name}-adminer-${domain}-record-a`, {
       zoneId: zoneId,
-      name: `${domain}`, // Your domain
-      type: "AAAA",
-      records,
-      aliases,
-    }, { parent: this });
-
-
-   
-    new aws.route53.Record(`${name}-${domain}-redirect-record-aaaa`, {
-      zoneId: zoneId,
-      name: `www.${domain}`, // Your domain
-      type: "AAAA",
-      records,
-      aliases,
+      name: `adminer.${domain}`,
+      type: "A",
+      aliases: [{
+        name: albDnsName,
+        zoneId: albZoneId,
+        evaluateTargetHealth: true,
+      }],
     }, { parent: this });
 
     this.registerOutputs();

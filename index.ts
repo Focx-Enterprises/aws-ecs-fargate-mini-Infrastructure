@@ -1,6 +1,7 @@
 import { VPC } from "./components/vpc";
 import { IamRoleWithPolicy } from "./components/iam-role-with-policy";
-import { ClusterService } from "./components/cluster-service";
+import { EcsTask } from "./components/ecs-task";
+import { EcsService } from "./components/ecs-service";
 import { LoadBalancer } from "./components/load-balancer";
 import { DnsRecords } from "./components/dns-records";
 
@@ -20,8 +21,8 @@ const infra = new VPC("cloudfocx-vpc", {
 });
 
 // Create a target group
-const targetGroup = new aws.lb.TargetGroup("cloudfocx-dev-target-group", {
-  name:"cloudfocx-dev-target-group", 
+const wpTargetGroup = new aws.lb.TargetGroup("cloudfocx-dev-wp-target-group", {
+  name: "wp-target-group",
   port: 80,
   protocol: "HTTP",
   targetType: "ip",
@@ -36,6 +37,23 @@ const targetGroup = new aws.lb.TargetGroup("cloudfocx-dev-target-group", {
   tags: {
     Name: "cloudfocx-target-group",
   },
+});
+
+
+const adminerTargetGroup = new aws.lb.TargetGroup("cloudfocx-dev-adminer-target-group", {
+  name: "adminer-target-group",
+  port: 8080,
+  protocol: "HTTP",
+  targetType: "ip",
+  vpcId: infra.vpc.id,
+  healthCheck: {
+    path: "/",
+    interval: 30,
+    timeout: 5,
+    healthyThreshold: 2,
+    unhealthyThreshold: 2,
+  },
+  tags: { Name: "cloudfocx-target-group" },
 });
 
 // Create an ECS cluster
@@ -57,51 +75,58 @@ const executionRole = new IamRoleWithPolicy("cloudfocx-dev-task-execution", {
   policyAttachmentArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 });
 
-// Create task defination and service
-const ecs = new ClusterService("cloudfocx-dev-ecs", {
-  clusterArn: cluster.arn,
-  publicSubnetIds: infra.publicSubnets.map(subnet => subnet.id),
-  privateSubnetIds: false, //infra.privateSubnets.map(subnet => subnet.id),
-  securityGroupId: infra.securityGroup.id,
-  executionRoleArn: executionRole.role.arn, // Replace with your actual IAM role ARN
-  loadBalancer: [{ containerPort: 80, containerName: "nginx", targetGroupArn: targetGroup.arn }]
-}, { dependsOn: [infra, cluster, targetGroup] });
-
-
 const cert = aws.acm.getCertificate({
   domain: domain,
   statuses: ["ISSUED"],
 });
 
-const lb = new LoadBalancer("cloudfocx-dev-nginx", {
+const lb = new LoadBalancer("cloudfocx-dev-wp", {
   domain: domain,
   securityGroups: [infra.securityGroup.id],
   subnets: infra.publicSubnets.map(v => v.id),
-  certificateArn: cert.then(c => c.arn), targetGroupArn: targetGroup.arn
-}, { dependsOn: [ecs, infra]});
+  certificateArn: cert.then(c => c.arn),
+  targetGroups: [
+    { targetGroupArn: wpTargetGroup.arn },
+    { targetGroupArn: adminerTargetGroup.arn, hostHeader: "adminer" }
+  ],
+}, { dependsOn: [infra, wpTargetGroup, adminerTargetGroup] });
+
+
+// Create task defination and service
+const task = new EcsTask("cloudfocx-dev-wp-task", {
+  executionRoleArn: executionRole.role.arn, // Replace with your actual IAM role ARN
+}, { dependsOn: [infra, cluster] });
+
+const ecsService = new EcsService("cloudfocx-dev-ecs-service-public", {
+  clusterArn: cluster.arn,
+  subnetIds: infra.publicSubnets.map(subnet => subnet.id),
+  securityGroupId: infra.securityGroup.id,
+  taskDefinitionArn: task.taskDefinition.arn, // Replace with your actual IAM role ARN
+  loadBalancer: [
+    { containerPort: 80, containerName: "wordpress", targetGroupArn: wpTargetGroup.arn },
+    { containerPort: 8080, containerName: "adminer", targetGroupArn: adminerTargetGroup.arn }
+  ]
+}, { dependsOn: [task, wpTargetGroup, adminerTargetGroup, lb] })
+
 
 const zone = aws.route53.getZone({ name: "weddingtwinkles.in" });
 
 new DnsRecords("cloudfocx-dns-records", {
   domain: domain,
   zoneId: zone.then(z => z.id),
-  aliases: [{
-    name: lb.loadBalancer.dnsName,
-    zoneId: lb.loadBalancer.zoneId,  // Correct ALB hosted zone ID for Route 53
-    evaluateTargetHealth: false,
-  }]
+  albDnsName: lb.loadBalancer.dnsName,
+  albZoneId: lb.loadBalancer.zoneId
 });
 
 // Export the ECS cluster and service name
 export const ecsClusterArn = cluster.arn;
-
-export const ecsServiceName = ecs.service?.name;
+export const ecsServiceName = ecsService.service.name
 
 // Export the VPC ID and Security Group ID and lb
 export const vpcId = infra.vpc.id;
 export const securityGroupId = infra.securityGroup.id;
-// export const loadBalancerUrl = loadBalancer.dnsName;
+// export const loadBalancerUrl = lb.loadBalancer.dnsName;
 
 // Export the name servers of the hosted zone
-export const zoneId = zone.then(z => z.id)
-export const certARN = cert.then(c => c.arn)
+// export const zoneId = zone.then(z => z.id)
+// export const certARN = cert.then(c => c.arn)
