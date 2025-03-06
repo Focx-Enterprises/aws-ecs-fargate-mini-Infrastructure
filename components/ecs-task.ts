@@ -4,6 +4,8 @@ import * as aws from "@pulumi/aws";
 // Define the arguments for the ECS component
 interface EcsArgs {
   executionRoleArn: Input<string>;
+  subnets: Input<string>[]
+  securityGroups: Input<string>[]
 }
 
 // Define an ECS component
@@ -12,6 +14,36 @@ export class EcsTask extends ComponentResource {
 
   constructor(name: string, args: EcsArgs, opts?: ComponentResourceOptions) {
     super("custom:resource:EcsComponent", name, {}, opts);
+
+
+    // ✅ Create EFS File System for WordPress
+    const wordpressEfs = new aws.efs.FileSystem("wordpress-efs", {
+      throughputMode: "bursting",
+    });
+
+    // ✅ Create EFS File System for MySQL
+    const mysqlEfs = new aws.efs.FileSystem("mysql-efs", {
+      throughputMode: "bursting",
+    });
+
+    // Create an EFS mount target in each subnet
+    args.subnets.forEach((subnetId, index) => {
+
+      new aws.efs.MountTarget(`wordpress-access-point-${index}`, {
+        fileSystemId: wordpressEfs.id,
+        subnetId,
+        securityGroups: args.securityGroups
+      });
+
+      new aws.efs.MountTarget(`mysql-access-point-${index}`, {
+        fileSystemId: mysqlEfs.id,
+        subnetId,
+        securityGroups: args.securityGroups
+      });
+
+    })
+
+
 
 
     // Create a MySQL database instance (RDS can be used instead for production)
@@ -30,6 +62,21 @@ export class EcsTask extends ComponentResource {
       networkMode: "awsvpc",
       requiresCompatibilities: ["FARGATE"],
       executionRoleArn: args.executionRoleArn,
+      volumes: [{
+        name: "wordpress-volume",
+        efsVolumeConfiguration: {
+          fileSystemId: wordpressEfs.id,
+          rootDirectory: "/"
+        }
+      },
+      {
+        name: "mysql-volume",
+        efsVolumeConfiguration: {
+          fileSystemId: mysqlEfs.id,
+          rootDirectory: "/"
+        }
+      }
+      ],
       containerDefinitions: JSON.stringify([
         {
           name: "wordpress",
@@ -46,6 +93,10 @@ export class EcsTask extends ComponentResource {
             containerPort: 80,
             hostPort: 80,
             protocol: "tcp"
+          }],
+          mountPoints: [{
+            sourceVolume: "wordpress-volume",
+            containerPath: "/var/www/html",
           }]
         },
         {
@@ -69,6 +120,10 @@ export class EcsTask extends ComponentResource {
             containerPort: 3306,
             hostPort: 3306,
             protocol: "tcp"
+          }],
+          mountPoints: [{
+            sourceVolume: "mysql-volume",
+            containerPath: "/var/lib/mysql",
           }]
         },
         {
@@ -82,7 +137,7 @@ export class EcsTask extends ComponentResource {
           portMappings: [{ containerPort: 8080, hostPort: 8080, protocol: "tcp" }]
         }
       ]),
-    }, { parent: this });
+    }, { parent: this, dependsOn: [wordpressEfs, mysqlEfs] });
 
     this.registerOutputs({
       taskDefinition: this.taskDefinition

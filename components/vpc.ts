@@ -105,6 +105,12 @@ export class VPC extends ComponentResource {
                     fromPort: 8080,
                     toPort: 8080,
                     cidrBlocks: ["0.0.0.0/0"], // Update with specific IPs for security
+                },
+                {
+                    protocol: "tcp",
+                    fromPort: 2049,
+                    toPort: 2049,
+                    cidrBlocks: ["0.0.0.0/0"], // Update with specific IPs for security
                 }
             ],
             egress: [

@@ -72,7 +72,7 @@ const executionRole = new IamRoleWithPolicy("cloudfocx-dev-task-execution", {
       },
     ],
   }),
-  policyAttachmentArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  policyAttachmentArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
 });
 
 const cert = aws.acm.getCertificate({
@@ -95,6 +95,8 @@ const lb = new LoadBalancer("cloudfocx-dev-wp", {
 // Create task defination and service
 const task = new EcsTask("cloudfocx-dev-wp-task", {
   executionRoleArn: executionRole.role.arn, // Replace with your actual IAM role ARN
+  securityGroups: [infra.securityGroup.id],
+  subnets: infra.publicSubnets.map(v => v.id),
 }, { dependsOn: [infra, cluster] });
 
 const ecsService = new EcsService("cloudfocx-dev-ecs-service-public", {
