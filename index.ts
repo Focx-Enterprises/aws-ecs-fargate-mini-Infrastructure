@@ -127,8 +127,12 @@ export const ecsServiceName = ecsService.service.name
 // Export the VPC ID and Security Group ID and lb
 export const vpcId = infra.vpc.id;
 export const securityGroupId = infra.securityGroup.id;
-// export const loadBalancerUrl = lb.loadBalancer.dnsName;
+export const loadBalancerUrl = lb.loadBalancer.dnsName;
 
 // Export the name servers of the hosted zone
-// export const zoneId = zone.then(z => z.id)
-// export const certARN = cert.then(c => c.arn)
+export const zoneId = zone.then(z => z.id)
+export const certARN = cert.then(c => c.arn)
+
+// efs id
+export const mysqlEfsId = task.mysqlEfs.id
+export const wpEfsId = task.wordpressEfs.id

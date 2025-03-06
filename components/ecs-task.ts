@@ -11,18 +11,20 @@ interface EcsArgs {
 // Define an ECS component
 export class EcsTask extends ComponentResource {
   public readonly taskDefinition: aws.ecs.TaskDefinition;
+  public readonly wordpressEfs: aws.efs.FileSystem;
+  public readonly mysqlEfs: aws.efs.FileSystem;
 
   constructor(name: string, args: EcsArgs, opts?: ComponentResourceOptions) {
     super("custom:resource:EcsComponent", name, {}, opts);
 
 
     // ✅ Create EFS File System for WordPress
-    const wordpressEfs = new aws.efs.FileSystem("wordpress-efs", {
+    this.wordpressEfs = new aws.efs.FileSystem("wordpress-efs", {
       throughputMode: "bursting",
     });
 
     // ✅ Create EFS File System for MySQL
-    const mysqlEfs = new aws.efs.FileSystem("mysql-efs", {
+    this.mysqlEfs = new aws.efs.FileSystem("mysql-efs", {
       throughputMode: "bursting",
     });
 
@@ -30,13 +32,13 @@ export class EcsTask extends ComponentResource {
     args.subnets.forEach((subnetId, index) => {
 
       new aws.efs.MountTarget(`wordpress-access-point-${index}`, {
-        fileSystemId: wordpressEfs.id,
+        fileSystemId: this.wordpressEfs.id,
         subnetId,
         securityGroups: args.securityGroups
       });
 
       new aws.efs.MountTarget(`mysql-access-point-${index}`, {
-        fileSystemId: mysqlEfs.id,
+        fileSystemId: this.mysqlEfs.id,
         subnetId,
         securityGroups: args.securityGroups
       });
@@ -65,14 +67,14 @@ export class EcsTask extends ComponentResource {
       volumes: [{
         name: "wordpress-volume",
         efsVolumeConfiguration: {
-          fileSystemId: wordpressEfs.id,
+          fileSystemId: this.wordpressEfs.id,
           rootDirectory: "/"
         }
       },
       {
         name: "mysql-volume",
         efsVolumeConfiguration: {
-          fileSystemId: mysqlEfs.id,
+          fileSystemId: this.mysqlEfs.id,
           rootDirectory: "/"
         }
       }
@@ -137,10 +139,12 @@ export class EcsTask extends ComponentResource {
           portMappings: [{ containerPort: 8080, hostPort: 8080, protocol: "tcp" }]
         }
       ]),
-    }, { parent: this, dependsOn: [wordpressEfs, mysqlEfs] });
+    }, { parent: this, dependsOn: [this.wordpressEfs, this.mysqlEfs] });
 
     this.registerOutputs({
-      taskDefinition: this.taskDefinition
+      taskDefinition: this.taskDefinition,
+      mysqlId: this.mysqlEfs.id,
+      wpId: this.wordpressEfs.id
     })
   }
 }
