@@ -22,6 +22,23 @@ export class IamRoleWithPolicy extends ComponentResource {
             assumeRolePolicy: args.assumeRolePolicy,
         }, { parent: this });
 
+        // ✅ Add inline policy to allow GHCR authentication
+        new aws.iam.RolePolicy(`${name}-ghcr-policy`, {
+            role: this.role.name,
+            policy: JSON.stringify({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "secretsmanager:GetSecretValue"
+                        ],
+                        "Resource": "arn:aws:secretsmanager:ap-south-1:575761002946:secret:ghcr-credentials-k69sun"
+                    }
+                ]
+            }),
+        }, { parent: this });
+
         // Attach the AmazonECSTaskExecutionRolePolicy to the IAM Role
         if (args.policyAttachmentArn)
             new aws.iam.RolePolicyAttachment(`${name}-role-policy-attachment`, {

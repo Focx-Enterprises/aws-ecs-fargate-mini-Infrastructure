@@ -8,6 +8,7 @@ interface EcsArgs {
   securityGroups: Input<string>[]
 }
 
+
 // Define an ECS component
 export class EcsTask extends ComponentResource {
   public readonly taskDefinition: aws.ecs.TaskDefinition;
@@ -45,9 +46,6 @@ export class EcsTask extends ComponentResource {
 
     })
 
-
-
-
     // Create a MySQL database instance (RDS can be used instead for production)
     const dbPassword = "s3cur3pa55w0rd!1357#"; // Store this securely in Secrets Manager in production
     const dbName = "weddingtwinkles_db";
@@ -82,7 +80,10 @@ export class EcsTask extends ComponentResource {
       containerDefinitions: JSON.stringify([
         {
           name: "wordpress",
-          image: "wordpress:latest",
+          image: "ghcr.io/focx-enterprises/wordpress:latest",
+          repositoryCredentials: {
+            "credentialsParameter":"arn:aws:secretsmanager:ap-south-1:575761002946:secret:ghcr-credentials-k69sun"
+          },
           essential: true,
           dependsOn: [{ containerName: "mysql", condition: "HEALTHY" }], // ✅ FIXED: Ensure MySQL starts first
           environment: [
